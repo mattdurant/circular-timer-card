@@ -23,6 +23,10 @@ class CircularTimerCard extends LitElement {
 		this._nameEntity = undefined;
 		this._nameAttribute = undefined;
 		this._nameMaxChars = undefined;
+		// Shrink text that is too wide for the ring's hole (circle layout).
+		this._fitText = true;
+		this._fitMinScale = 0.4;
+		this._fit = { countdown: 1, "timer-name": 1 };
 		this._timeFormat = "hh:mm:ss";
 		this._icon = "use_entity_icon";
 		this._primaryInfo = "name";
@@ -64,6 +68,7 @@ class CircularTimerCard extends LitElement {
 		return {
 			_config: {},
 			_timeUpdater: {},
+			_fit: {},
 		};
 	}
 
@@ -155,6 +160,13 @@ class CircularTimerCard extends LitElement {
 		}
 		if (config.name_max_chars) {
 			this._nameMaxChars = Number(config.name_max_chars);
+		}
+
+		if (config.fit_text !== undefined) {
+			this._fitText = config.fit_text !== false;
+		}
+		if (config.fit_min_scale) {
+			this._fitMinScale = Math.min(1, Math.max(0.1, Number(config.fit_min_scale)));
 		}
 
 		if (config.time_format) {
@@ -335,6 +347,7 @@ class CircularTimerCard extends LitElement {
                 text-anchor="middle"
                 dominant-baseline="central"
                 fill=${textColor}
+                style="font-size:calc(85% * ${this._fit.countdown});"
               >
                 ${secondary_info}
               </text>
@@ -345,7 +358,7 @@ class CircularTimerCard extends LitElement {
                 text-anchor="middle"
                 dominant-baseline="central"
                 fill="var(--secondary-text-color)"
-                style="font-size:${this._secondaryInfoSize};"
+                style="font-size:calc(${this._secondaryInfoSize} * ${this._fit["timer-name"]});"
               >
                 ${primary_info}
               </text>
@@ -353,6 +366,39 @@ class CircularTimerCard extends LitElement {
           </svg>
         </ha-card>
       `;
+		}
+	}
+
+	// Keep the center text and the name inside the ring. Widths are measured
+	// in SVG units, so card size does not matter; the scale only ever shrinks
+	// (down to fit_min_scale) and grows back to 1 when the text gets shorter.
+	updated() {
+		if (!this._fitText || this._layout !== "circle" || !this.renderRoot) {
+			return;
+		}
+		const limits = { countdown: 52, "timer-name": 48 };
+		var next = null;
+		for (const [id, maxWidth] of Object.entries(limits)) {
+			const el = this.renderRoot.querySelector(`#${id}`);
+			if (!el || typeof el.getBBox !== "function") {
+				continue;
+			}
+			const width = el.getBBox().width;
+			if (!width) {
+				continue;
+			}
+			const current = this._fit[id];
+			const wanted = Math.max(
+				this._fitMinScale,
+				Math.min(1, (current * maxWidth) / width),
+			);
+			if (Math.abs(wanted - current) > 0.01) {
+				next = next || { ...this._fit };
+				next[id] = wanted;
+			}
+		}
+		if (next) {
+			this._fit = next;
 		}
 	}
 
