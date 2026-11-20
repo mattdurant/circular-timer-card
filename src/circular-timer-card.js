@@ -20,6 +20,10 @@ class CircularTimerCard extends LitElement {
 		this._layout = "circle";
 
 		this._name = "use_entity_friendly_name";
+		this._nameEntity = undefined;
+		this._nameAttribute = undefined;
+		this._nameMaxChars = undefined;
+		this._timeFormat = "hh:mm:ss";
 		this._icon = "use_entity_icon";
 		this._primaryInfo = "name";
 		this._secondaryInfo = "timer";
@@ -101,11 +105,21 @@ class CircularTimerCard extends LitElement {
 			this._cornerRadius = config.corner_radius;
 		}
 
+		// `color` is either a list of color strings (evenly spaced, smoothed
+		// with a B-spline as before) or a list of stops:
+		//   - { color: "#e74c3c", at: 0 }     # 0 = empty timer
+		//   - { color: "#2ecc71", at: 100 }   # 100 = full timer
+		// Stops are joined with straight RGB blends, so each color is hit
+		// exactly at its position.
+		this._colorStops = undefined;
 		if (config.color) {
-			if (config.color.length === 1) {
-				this._gradientColors = [config.color[0], config.color[0]];
+			const colors = Array.isArray(config.color) ? config.color : [config.color];
+			if (colors.some((c) => typeof c === "object" && c !== null)) {
+				this._colorStops = this._parseColorStops(colors);
+			} else if (colors.length === 1) {
+				this._gradientColors = [colors[0], colors[0]];
 			} else {
-				this._gradientColors = config.color;
+				this._gradientColors = colors;
 			}
 		}
 
@@ -129,6 +143,22 @@ class CircularTimerCard extends LitElement {
 
 		if (config.name) {
 			this._name = config.name;
+		}
+
+		// Take the displayed name from another entity (e.g. an input_text),
+		// optionally from one of its attributes. Falls back to `name`.
+		if (config.name_entity) {
+			this._nameEntity = config.name_entity;
+		}
+		if (config.name_attribute) {
+			this._nameAttribute = config.name_attribute;
+		}
+		if (config.name_max_chars) {
+			this._nameMaxChars = Number(config.name_max_chars);
+		}
+
+		if (config.time_format) {
+			this._timeFormat = config.time_format;
 		}
 
 		if (config.icon) {
@@ -159,9 +189,9 @@ class CircularTimerCard extends LitElement {
 			this._doubleTapAction = config.double_tap_action;
 		}
 
-		this._colorScale = d3.scaleSequential(
-			d3.interpolateRgbBasis(this._gradientColors),
-		);
+		this._colorScale = this._colorStops
+			? this._makeStopScale(this._colorStops)
+			: d3.scaleSequential(d3.interpolateRgbBasis(this._gradientColors));
 		this._arc = d3
 			.arc()
 			.innerRadius(30)
@@ -191,9 +221,7 @@ class CircularTimerCard extends LitElement {
 			return html` <ha-card>Unknown entity: ${this._config.entity}</ha-card> `;
 		}
 
-		if (this._name == "use_entity_friendly_name") {
-			this._name = this._stateObj.attributes.friendly_name;
-		}
+		var name = this._resolveName();
 
 		var icon;
 		var icon_style;
@@ -232,7 +260,7 @@ class CircularTimerCard extends LitElement {
 				rem_sec = d_sec;
 			}
 		}
-		var proc = rem_sec / d_sec;
+		var proc = Math.min(1, Math.max(0, rem_sec / d_sec));
 
 		var limitBin = Math.floor(this._bins * proc);
 		var colorData = this._generateArcColorData(limitBin);
@@ -246,14 +274,14 @@ class CircularTimerCard extends LitElement {
 		} else if (this._primaryInfo == "timer") {
 			primary_info = display_rem_sec;
 		} else {
-			primary_info = this._name;
+			primary_info = name;
 		}
 
 		var secondary_info;
 		if (this._secondaryInfo == "none") {
 			secondary_info = "";
 		} else if (this._secondaryInfo == "name") {
-			secondary_info = this._name;
+			secondary_info = name;
 		} else {
 			secondary_info = display_rem_sec;
 		}
@@ -385,16 +413,110 @@ class CircularTimerCard extends LitElement {
 		return deg * (Math.PI / 180);
 	}
 
-	_getTimeString(s) {
-		var h = Math.floor(s / 3600);
-		var m = Math.floor((s % 3600) / 60);
-		var s = Math.floor((s % 3600) % 60);
+	// Name shown on the card: name_entity (state or attribute) if set and
+	// usable, else `name`, else the timer's friendly name.
+	_resolveName() {
+		var name;
+		if (this._nameEntity) {
+			const obj = this.hass.states[this._nameEntity];
+			if (obj) {
+				const value = this._nameAttribute
+					? obj.attributes[this._nameAttribute]
+					: obj.state;
+				if (
+					value !== undefined &&
+					value !== null &&
+					value !== "unknown" &&
+					value !== "unavailable"
+				) {
+					name = String(value);
+				}
+			}
+		}
+		if (name === undefined || name === "") {
+			name =
+				this._name === "use_entity_friendly_name"
+					? this._stateObj.attributes.friendly_name
+					: this._name;
+		}
+		if (name === "none") {
+			return "";
+		}
+		if (this._nameMaxChars > 0 && name.length > this._nameMaxChars) {
+			name = `${name.slice(0, this._nameMaxChars - 1).trimEnd()}\u2026`;
+		}
+		return name;
+	}
 
-		var hours = h.toString().padStart(2, "0");
-		var minutes = m.toString().padStart(2, "0");
-		var seconds = s.toString().padStart(2, "0");
+	_parseColorStops(entries) {
+		const stops = entries.map((entry, i) => {
+			if (typeof entry !== "object" || entry === null) {
+				throw new Error(
+					"When using color stops, every entry in `color` needs `color` and `at`.",
+				);
+			}
+			const at = Number(entry.at);
+			if (!entry.color || Number.isNaN(at) || at < 0 || at > 100) {
+				throw new Error(
+					`color[${i}] needs a \`color\` and an \`at\` between 0 (empty) and 100 (full).`,
+				);
+			}
+			return { color: entry.color, at: at / 100 };
+		});
+		stops.sort((a, b) => a.at - b.at);
+		return stops;
+	}
 
-		return `${hours}:${minutes}:${seconds}`;
+	// Straight RGB blend between neighbouring stops; colors before the first
+	// stop and after the last one are held flat.
+	_makeStopScale(stops) {
+		return (t) => {
+			if (t <= stops[0].at) {
+				return stops[0].color;
+			}
+			const last = stops[stops.length - 1];
+			if (t >= last.at) {
+				return last.color;
+			}
+			for (let i = 1; i < stops.length; i++) {
+				if (t <= stops[i].at) {
+					const a = stops[i - 1];
+					const b = stops[i];
+					const span = b.at - a.at;
+					return d3.interpolateRgb(a.color, b.color)(
+						span === 0 ? 1 : (t - a.at) / span,
+					);
+				}
+			}
+			return last.color;
+		};
+	}
+
+	// time_format: "hh:mm:ss" (default), "mm:ss" (minutes can pass 59),
+	// "auto" (h:mm:ss, or m:ss under an hour), "compact" (1h 05m / 4m 30s /
+	// 45s) or "minutes" (whole minutes remaining, rounded up: 25m).
+	_getTimeString(totalSeconds) {
+		const total = Math.max(0, Math.floor(totalSeconds));
+		const h = Math.floor(total / 3600);
+		const m = Math.floor((total % 3600) / 60);
+		const sec = total % 60;
+		const two = (n) => n.toString().padStart(2, "0");
+
+		switch (this._timeFormat) {
+			case "mm:ss":
+				return `${two(Math.floor(total / 60))}:${two(sec)}`;
+			case "auto":
+				return h > 0 ? `${h}:${two(m)}:${two(sec)}` : `${m}:${two(sec)}`;
+			case "compact":
+				if (h > 0) {
+					return `${h}h ${two(m)}m`;
+				}
+				return m > 0 ? `${m}m ${two(sec)}s` : `${sec}s`;
+			case "minutes":
+				return `${Math.ceil(total / 60)}m`;
+			default:
+				return `${two(h)}:${two(m)}:${two(sec)}`;
+		}
 	}
 
 	_toggle_func() {

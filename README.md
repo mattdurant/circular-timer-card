@@ -54,7 +54,11 @@ All following options which support colors can also be used with hexadecimal col
 | bins | int | optional | 36 | Number of bins (arcs). |
 | pad_angle | float | optional | 1 | Seperating angle between each individual arc in degrees. |
 | corner_radius | float | optional | 4 | Radius for rounded arc corners. |
-| color | array of strings | optional | | Color array used for filling remaining timer arc units. If array contains only single value, that color will be used to fill the whole timer, otherwise linear gradient will be created. |
+| color | array of strings | optional | | Color array used for filling remaining timer arc units. If array contains only single value, that color will be used to fill the whole timer, otherwise linear gradient will be created. Instead of strings, entries can be color stops (`color` + `at`, see below). |
+| name_entity | string | optional | | Entity whose state is shown as the name (e.g. `input_text.focus_task`). Falls back to `name` while it is empty, `unknown` or `unavailable`. |
+| name_attribute | string | optional | | Show this attribute of `name_entity` instead of its state. |
+| name_max_chars | int | optional | | Shorten long names to this many characters, ending with an ellipsis. |
+| time_format | string | optional | hh:mm:ss | How the time is shown. `hh:mm:ss`, `mm:ss` (minutes keep counting past 59, e.g. 125:00), `auto` (1:05:00, or 4:30 under an hour), `compact` (1h 05m, 4m 30s, 45s) or `minutes` (whole minutes remaining, rounded up, e.g. 25m). |
 | color_state | boolean | optional | | If set to `true` it will color remaining time in the middle of card with current state color from gradient. |
 | empty_bar_color | string | optional | | Color for timer arcs which are inactive, by default they gave opacity of 0, therefore they are not visible. |
 | secondary_info_size | string or int | optional | 50% for cicle or 80% for minimal | CSS size for secondary info (Friendly name of timer). |
@@ -91,4 +95,19 @@ color:
   - '#ee7256'
 layout: minimal
 color_state: true
+```
+
+With color stops, to choose exactly where each color sits (`at` is 0 for an empty timer to 100 for a full one). Colors are blended in straight lines between stops:
+```yaml
+type: custom:circular-timer-card
+entity: timer.focus
+bins: 50
+color:
+  - { color: '#e74c3c', at: 0 }     # empty
+  - { color: '#f1c40f', at: 25 }
+  - { color: '#2ecc71', at: 100 }   # full
+color_state: true
+time_format: auto
+name_entity: input_text.focus_task
+name_max_chars: 24
 ```
