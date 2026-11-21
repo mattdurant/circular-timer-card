@@ -24,6 +24,11 @@ class CircularTimerCard extends LitElement {
 		this._nameAttribute = undefined;
 		this._nameMaxChars = undefined;
 		// Shrink text that is too wide for the ring's hole (circle layout).
+		// Optional: scale the ring to a session budget kept in two number
+		// entities (minutes) instead of the timer's own duration, so a timer
+		// restarted to add time keeps a continuous ring.
+		this._plannedEntity = undefined;
+		this._addedEntity = undefined;
 		this._fitText = true;
 		this._fitMinScale = 0.4;
 		this._fit = { countdown: 1, "timer-name": 1 };
@@ -162,6 +167,13 @@ class CircularTimerCard extends LitElement {
 			this._nameMaxChars = Number(config.name_max_chars);
 		}
 
+		if (config.planned_entity) {
+			this._plannedEntity = config.planned_entity;
+		}
+		if (config.added_entity) {
+			this._addedEntity = config.added_entity;
+		}
+
 		if (config.fit_text !== undefined) {
 			this._fitText = config.fit_text !== false;
 		}
@@ -248,6 +260,17 @@ class CircularTimerCard extends LitElement {
 
 		var a = this._stateObj.attributes.duration.split(":");
 		var d_sec = +a[0] * 60 * 60 + +a[1] * 60 + +a[2];
+		// While running or paused, the ring is scaled to planned + added
+		// minutes when those entities are configured and a session is open.
+		if (
+			this._stateObj.state == "active" ||
+			this._stateObj.state == "paused"
+		) {
+			const budget = this._sessionSeconds();
+			if (budget > 0) {
+				d_sec = budget;
+			}
+		}
 		var rem_sec;
 		if (this._stateObj.state == "active") {
 			if (this._direction == "countup") {
@@ -457,6 +480,21 @@ class CircularTimerCard extends LitElement {
 
 	_toRadians(deg) {
 		return deg * (Math.PI / 180);
+	}
+
+	// Seconds in the current session (planned + added minutes), or 0 when
+	// planned_entity is not set, unavailable, or no session is open.
+	_sessionSeconds() {
+		if (!this._plannedEntity) {
+			return 0;
+		}
+		const minutes = (id) => {
+			const obj = id ? this.hass.states[id] : undefined;
+			const n = obj ? parseFloat(obj.state) : NaN;
+			return Number.isFinite(n) && n > 0 ? n : 0;
+		};
+		const planned = minutes(this._plannedEntity);
+		return planned > 0 ? (planned + minutes(this._addedEntity)) * 60 : 0;
 	}
 
 	// Name shown on the card: name_entity (state or attribute) if set and

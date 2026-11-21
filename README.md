@@ -59,6 +59,8 @@ All following options which support colors can also be used with hexadecimal col
 | name_attribute | string | optional | | Show this attribute of `name_entity` instead of its state. |
 | name_max_chars | int | optional | | Shorten long names to this many characters, ending with an ellipsis. |
 | time_format | string | optional | hh:mm:ss | How the time is shown. `hh:mm:ss`, `mm:ss` (minutes keep counting past 59, e.g. 125:00), `auto` (1:05:00, or 4:30 under an hour), `compact` (1h 05m, 4m 30s, 45s) or `minutes` (whole minutes remaining, rounded up, e.g. 25m). |
+| planned_entity | string | optional | | `input_number` holding the session's planned minutes. While the timer runs or is paused, the ring is scaled to this (plus `added_entity`) instead of the timer's own duration. Ignored when it is 0 or unavailable. |
+| added_entity | string | optional | | `input_number` holding minutes added to the session since it started (for example by a "+5 min" button that restarts the timer). |
 | fit_text | boolean | optional | true | Shrink the center text and the name when they are too wide for the ring (circle layout). Set `false` for fixed sizes. |
 | fit_min_scale | float | optional | 0.4 | Smallest size text may shrink to, as a fraction of its normal size. |
 | color_state | boolean | optional | | If set to `true` it will color remaining time in the middle of card with current state color from gradient. |
